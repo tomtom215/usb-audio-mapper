@@ -6,7 +6,7 @@
 # This script creates udev rules for USB sound cards to ensure they maintain 
 # consistent names across reboots, with symlinks for easy access.
 #
-# Version: 3.0.0 Mataches Lyrebird's version 1.2.1
+# Version: 3.0.0 Matches Lyrebird's version 1.2.1
 # Changes: Fixed v1.0.0 backwards compatibility
 #          - Removed serial number suffixes from port paths for udev rules
 #          - Maintained all production-ready improvements
