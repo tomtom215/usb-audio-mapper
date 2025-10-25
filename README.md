@@ -1,369 +1,549 @@
 # USB Audio Mapper
 
-A robust Linux utility for creating persistent naming rules for USB audio capture devices (microphones), ensuring they maintain consistent names across reboots.
+A Linux utility for creating persistent naming rules for USB audio devices, ensuring they maintain consistent names across reboots and device reconnections.
+
+Part of the [LyreBirdAudio](https://github.com/tomtom215/LyreBirdAudio) project.
+
+**Version**: 3.0.0
+
+## Support the Project
+
+If you find this tool useful, please star the [GitHub repository](https://github.com/tomtom215/LyreBirdAudio) and consider citing it in your projects:
+
+```
+USB Audio Mapper (LyreBirdAudio Project)
+https://github.com/tomtom215/LyreBirdAudio
+Tom F
+```
+
+If you use this in production systems, research, or interesting projects, we'd appreciate hearing about it in the GitHub discussions.
 
 ## Overview
 
-USB Audio Mapper creates udev rules to persistently name your USB audio devices in Linux. This solves the common issue where USB audio devices may change names (card0, card1, etc.) when other devices are connected or after reboots, causing configuration and application problems.
+USB audio devices in Linux are assigned card numbers (card0, card1, etc.) based on detection order. This creates problems:
 
-**Version**: 2.0 (Enhanced robustness and reliability)
+- Device numbers change after reboots or when other devices are connected
+- Application configurations break when card numbers change
+- Multiple identical devices cannot be reliably distinguished
+- Audio routing becomes unpredictable in complex setups
 
-## Features
+USB Audio Mapper solves these issues by creating udev rules that assign persistent, user-defined names to your devices. Once configured, devices maintain their names regardless of connection order.
 
-- Creates comprehensive udev rules for reliable device identification
-- Provides persistent device names and symlinks for easy access
-- Handles multiple identical devices correctly by detecting physical USB ports
-- Supports both interactive and non-interactive operation
-- Detects device vendor/product IDs, USB paths, and platform-specific paths
-- Works across different Linux distributions with varying device path formats
-- Atomic file operations prevent corruption during rule updates
-- Comprehensive error handling and validation
-- Signal handling for safe interruption
+## What's New in v3.0.0
 
-## Common Problems Solved
+Version 3.0.0 restores backwards compatibility with v1.0.0 while adding production-ready improvements:
 
-The USB Audio Mapper addresses several common issues that Linux users face with USB audio devices:
+**Critical Fixes**:
+- USB port paths now use clean format (`3-4`) instead of suffixed format (`usb-3.4-abc12345`)
+- Device detection correctly matches by busnum/devnum, preventing false matches in complex USB hubs
+- Automatic rule deduplication prevents duplicate rules for the same device
+- Reboot confirmation requires typing "YES" with 30-second timeout
 
-1. **Inconsistent Device Ordering**: 
-   - **Problem**: USB audio devices are assigned card numbers (card0, card1) based on detection order
-   - **Impact**: After a reboot, your USB microphone that was previously card1 might become card2
-   - **Consequence**: Applications configured to use a specific card number stop working
+**Code Quality**:
+- Portable implementation works on minimal systems without md5sum
+- New `safe_base10()` function prevents octal interpretation bugs
+- Enhanced error handling with default parameters
+- Centralized rule generation with `generate_udev_rules()` function
+- All configuration values defined as readonly constants
 
-2. **Configuration Persistence**:
-   - **Problem**: Audio settings and configurations often reference specific card names/numbers
-   - **Impact**: When card numbers change, your carefully configured ALSA or PulseAudio settings break
-   - **Consequence**: Requires manual reconfiguration after each device change or reboot
-
-3. **Multiple Identical Devices**:
-   - **Problem**: Two identical USB microphones appear the same to the system
-   - **Impact**: No reliable way to distinguish between them in applications
-   - **Consequence**: Unable to create reliable multi-microphone setups
-
-4. **Application Startup Dependencies**:
-   - **Problem**: Applications that auto-start may initialize before all USB devices are detected
-   - **Impact**: Applications might use the wrong audio device or fail to find expected devices
-   - **Consequence**: Requires manual intervention or complex startup scripts
-
-5. **Hardware Swapping**:
-   - **Problem**: Temporarily disconnecting a device can change the ordering of all other devices
-   - **Impact**: Disconnecting one device can break configurations for all other audio devices
-   - **Consequence**: Makes working with multiple USB audio devices frustrating
-
-USB Audio Mapper solves these issues by creating persistent, reliable device names and paths that remain consistent regardless of connection order or system changes. For best results, keep devices plugged into the same USB port once configured.
+**Migration from v2.0.0**: If upgrading from v2.0.0, you must remove old rules and regenerate. See Migration Guide below.
 
 ## Requirements
 
-**Required commands**:
-- `lsusb` - For listing USB devices
-- `udevadm` - For udev rule management
-- `grep`, `sed`, `cat` - Standard text processing utilities
+**Required**:
+- `lsusb` (package: `usbutils`)
+- `udevadm` (package: `udev` or `systemd`)
+- `grep`, `sed`, `cat` (package: `coreutils`)
+- Bash 4.0 or later
+- Linux kernel 2.6+ with udev support
+- Root privileges
 
-**Optional commands**:
-- `aplay` - For listing ALSA devices (enhanced functionality)
+**Optional**:
+- `aplay` (package: `alsa-utils`) - Enhanced device information display
+- `sha256sum` or `sha1sum` - Hash generation (script includes pure bash fallback)
 
-The script will check for these dependencies at startup and report any missing commands.
+The script checks dependencies at startup and reports missing commands.
 
 ## Installation
 
-1. Download the script:
-   ```bash
-   curl -O https://raw.githubusercontent.com/tomtom215/usb-audio-mapper/main/usb-audio-mapper.sh
-   # or
-   wget https://raw.githubusercontent.com/tomtom215/usb-audio-mapper/main/usb-audio-mapper.sh
-   ```
+Download and make executable:
 
-2. Make it executable:
-   ```bash
-   chmod +x usb-audio-mapper.sh
-   ```
+```bash
+curl -O https://raw.githubusercontent.com/tomtom215/LyreBirdAudio/main/usb-audio-mapper.sh
+chmod +x usb-audio-mapper.sh
+```
 
-3. (Optional) Move to system path:
-   ```bash
-   sudo mv usb-audio-mapper.sh /usr/local/bin/
-   ```
+Or install system-wide:
+
+```bash
+sudo curl -o /usr/local/bin/usb-audio-mapper \
+  https://raw.githubusercontent.com/tomtom215/LyreBirdAudio/main/usb-audio-mapper.sh
+sudo chmod +x /usr/local/bin/usb-audio-mapper
+```
 
 ## Usage
 
 ### Interactive Mode
 
-Run the script with no arguments to enter interactive mode:
+Run without arguments for guided setup:
 
 ```bash
 sudo ./usb-audio-mapper.sh
 ```
 
-Follow the prompts to:
-1. Select a sound card from the detected USB audio devices
-2. Confirm the corresponding USB device
-3. Enter a friendly name for the device (lowercase letters, numbers, and hyphens only, max 32 characters)
-4. Optionally reboot to apply the changes
+The script will:
+1. Display detected USB devices and sound cards
+2. Prompt for card number to map
+3. Ask for USB device confirmation
+4. Request a friendly name (lowercase letters, numbers, hyphens; 1-32 characters)
+5. Create udev rules with automatic deduplication
+6. Offer system reboot (requires "YES" confirmation)
+
+You can also explicitly request interactive mode:
+
+```bash
+sudo ./usb-audio-mapper.sh -i
+```
 
 ### Non-Interactive Mode
 
-For scripting or automating device naming:
+For automation or scripting:
 
 ```bash
-sudo ./usb-audio-mapper.sh -n -d "DEVICE_NAME" -v VENDOR_ID -p PRODUCT_ID -f FRIENDLY_NAME
+sudo ./usb-audio-mapper.sh -n -d "Device Name" -v VENDOR_ID -p PRODUCT_ID -f friendly-name
 ```
 
 Required parameters:
-- `-d` : Device name (descriptive, for logging only)
-- `-v` : Vendor ID (4-digit hex, case insensitive)
-- `-p` : Product ID (4-digit hex, case insensitive)
-- `-f` : Friendly name (will be used in device paths, must start with letter)
+- `-n, --non-interactive` : Non-interactive mode
+- `-d, --device NAME` : Device name (used in rule comments)
+- `-v, --vendor ID` : Vendor ID (4-digit hex)
+- `-p, --product ID` : Product ID (4-digit hex)
+- `-f, --friendly NAME` : Friendly name (used in device paths)
 
-Optional parameters:
-- `-u` : USB port path (helps with multiple identical devices)
+Optional:
+- `-u, --usb-port PORT` : USB port path (required for multiple identical devices)
 
 Example:
+
 ```bash
 sudo ./usb-audio-mapper.sh -n -d "MOVO X1 MINI" -v 2e88 -p 4610 -f movo-mic
 ```
 
-### Additional Options
+Find vendor and product IDs with:
 
-- `-t, --test` : Test USB port detection capabilities
-- `-D, --debug` : Enable debug output for troubleshooting
-- `-h, --help` : Display help information
+```bash
+lsusb | grep -i audio
+# Output: Bus 001 Device 003: ID 2e88:4610 USB Audio Device
+#         Vendor: 2e88 ^^^^ ^^^^ Product: 4610
+```
+
+### Testing Port Detection
+
+Test if your system supports USB port detection:
+
+```bash
+sudo ./usb-audio-mapper.sh -t
+```
+
+Output shows how many devices can be mapped to physical ports. Port detection is only required for multiple identical devices.
+
+### Debug Mode
+
+Enable detailed output for troubleshooting:
+
+```bash
+sudo ./usb-audio-mapper.sh -D
+```
+
+Or combine with debug environment variable:
+
+```bash
+sudo DEBUG=true ./usb-audio-mapper.sh -t
+```
+
+### Viewing Help
+
+View all available options and usage information:
+
+```bash
+sudo ./usb-audio-mapper.sh -h
+```
+
+Or without sudo to see the help text:
+
+```bash
+./usb-audio-mapper.sh --help
+```
+
+### Command Reference
+
+Complete list of all available flags and options:
+
+| Flag | Long Form | Required | Description | Example Value |
+|------|-----------|----------|-------------|---------------|
+| `-i` | `--interactive` | No | Interactive mode (default) | N/A |
+| `-n` | `--non-interactive` | For automation | Non-interactive mode | N/A |
+| `-d` | `--device` | Yes (non-interactive) | Device name for comments | "MOVO X1 MINI" |
+| `-v` | `--vendor` | Yes (non-interactive) | 4-digit hex vendor ID | `2e88` |
+| `-p` | `--product` | Yes (non-interactive) | 4-digit hex product ID | `4610` |
+| `-u` | `--usb-port` | No | USB port path | `3-4` or `usb-3.4` |
+| `-f` | `--friendly` | Yes (non-interactive) | Friendly name (lowercase, hyphens) | `movo-mic` |
+| `-t` | `--test` | No | Test USB port detection | N/A |
+| `-D` | `--debug` | No | Enable debug output | N/A |
+| `-h` | `--help` | No | Show help message | N/A |
 
 ## Validation
 
-After running the script and rebooting, verify the mapping worked:
+After running the script and rebooting, verify the configuration:
 
-1. **Check the sound card list**:
-   ```bash
-   cat /proc/asound/cards
-   ```
-   Your device should appear with the friendly name you chose.
+**Check sound card assignment**:
+```bash
+cat /proc/asound/cards
+```
 
-2. **List ALSA devices**:
-   ```bash
-   arecord -l  # For input devices (microphones)
-   aplay -l    # For output devices (speakers)
-   ```
+Your device should show the friendly name instead of the generic name.
 
-3. **Verify the udev rules**:
-   ```bash
-   sudo cat /etc/udev/rules.d/99-usb-soundcards.rules
-   ```
-   Should show three rule types for your device (basic, USB path, platform ID).
+**Verify udev rules**:
+```bash
+sudo cat /etc/udev/rules.d/99-usb-soundcards.rules
+```
 
-4. **Check the symlink was created**:
-   ```bash
-   ls -la /dev/sound/by-id/
-   ```
-   Should show a symlink with your friendly name.
+Expected format for v3.0.0:
+```
+# USB Sound Card: USB Audio Device
+SUBSYSTEM=="sound", ATTRS{idVendor}=="2e88", ATTRS{idProduct}=="4610", ATTR{id}="movo-mic", SYMLINK+="sound/by-id/movo-mic"
+```
+
+If port detection succeeded, additional rules will be present with `KERNELS=="3-4"` or `ENV{ID_PATH}` matching.
+
+**Important**: v3.0.0 uses clean port paths (e.g., `3-4`). If you see paths with random characters (e.g., `usb-3.4-abc12345`), you still have v2.0.0 rules.
+
+**Check symlink**:
+```bash
+ls -la /dev/sound/by-id/
+```
+
+Should show a symlink with your friendly name pointing to the actual device.
+
+**Test device access**:
+```bash
+arecord -D plughw:movo-mic -d 3 test.wav
+```
 
 ## Troubleshooting
 
 ### Device Not Being Renamed
 
-1. **Check the udev rules were created**:
-   ```bash
-   sudo cat /etc/udev/rules.d/99-usb-soundcards.rules
-   ```
+**Diagnosis**:
+1. Verify rules exist: `sudo cat /etc/udev/rules.d/99-usb-soundcards.rules`
+2. Check vendor/product IDs match: `lsusb | grep -i audio`
+3. Reload rules: `sudo udevadm control --reload-rules && sudo udevadm trigger --subsystem-match=sound`
+4. Reboot system
 
-2. **Reload the udev rules manually**:
-   ```bash
-   sudo udevadm control --reload-rules
-   sudo udevadm trigger
-   ```
+**Common causes**:
+- Old v2.0.0 rules present (check for suffixed port paths, remove entire file if found)
+- Vendor/product IDs don't match device
+- Rules file has incorrect permissions (should be 644, owned by root)
 
-3. **Verify device information matches**:
-   ```bash
-   lsusb | grep -i audio
-   ```
-   Check that the vendor and product IDs in the rule match the actual device.
+### Multiple Identical Devices Not Distinguished
 
-4. **Run with debug logging**:
-   ```bash
-   sudo ./usb-audio-mapper.sh -D
-   ```
+You must use port-specific mapping:
 
-5. **Check system logs**:
-   ```bash
-   sudo journalctl -f
-   # In another terminal, unplug and replug the USB device
-   ```
+1. Connect devices one at a time and note their ports from `cat /proc/asound/cards`
+2. Map each to its specific port:
 
-### Multiple Identical Devices
-
-If you have multiple identical USB audio devices:
-
-1. **Connect one device at a time** and run the script for each
-2. Use different USB ports for each device
-3. Ensure each device gets a unique friendly name
-4. The script will attempt to detect physical USB ports to differentiate devices
-
-### Path Identification Issues
-
-For devices with detection problems:
-
-1. **Test port detection capability**:
-   ```bash
-   sudo ./usb-audio-mapper.sh -t
-   ```
-
-2. **Get detailed device information**:
-   ```bash
-   # Replace X with your card number
-   sudo udevadm info -a -n /dev/snd/controlCX
-   ```
-
-3. **Monitor udev events**:
-   ```bash
-   sudo udevadm monitor --environment --udev
-   # Then plug in the device
-   ```
-
-### Warning Messages
-
-**"Could not get complete USB information"**: This warning is informational and doesn't prevent the script from working. It means some detection methods couldn't parse the device information, but the fallback methods will handle it correctly.
-
-## Uninstallation
-
-To remove all persistent naming rules:
-
-1. **Delete the udev rules file**:
-   ```bash
-   sudo rm /etc/udev/rules.d/99-usb-soundcards.rules
-   ```
-
-2. **Reload udev rules**:
-   ```bash
-   sudo udevadm control --reload-rules
-   ```
-
-3. **Reboot to restore default naming**:
-   ```bash
-   sudo reboot
-   ```
-
-To remove rules for a specific device only, edit the rules file and delete the relevant lines:
 ```bash
-sudo nano /etc/udev/rules.d/99-usb-soundcards.rules
-# Delete the lines for your specific device
-sudo udevadm control --reload-rules
+sudo ./usb-audio-mapper.sh -n -d "Mic Left" -v 2e88 -p 4610 -u "3" -f mic-left
+sudo ./usb-audio-mapper.sh -n -d "Mic Right" -v 2e88 -p 4610 -u "4" -f mic-right
 ```
 
-## How It Works
+3. Keep devices in the same USB ports after configuration
 
-### Linux Device Management and udev
+### Port Detection Fails
 
-In Linux, when devices are connected, the kernel detects them and creates device nodes in the `/dev` directory. The udev system (part of systemd in modern distributions) manages these device nodes dynamically.
+Run diagnostic test:
+```bash
+sudo DEBUG=true ./usb-audio-mapper.sh -t
+```
 
-Without persistence rules, ALSA (Advanced Linux Sound Architecture) assigns sound card indices (0, 1, 2...) based on the order of detection, which can change between reboots or when devices are added/removed.
+If port detection completely fails, the script will still work using vendor/product ID matching only. You won't be able to distinguish between multiple identical devices.
 
-### udev Rules Mechanism
+### Script Issues
 
-The udev system uses rules files (stored in `/etc/udev/rules.d/` and `/usr/lib/udev/rules.d/`) to determine how to name and configure devices. Rules are processed in lexicographical order by filename, which is why this script creates a file named `99-usb-soundcards.rules` to ensure it runs after standard rules.
+**Missing dependencies**:
+```bash
+# Debian/Ubuntu
+sudo apt-get install usbutils udev coreutils alsa-utils
 
-When a device event occurs (like plugging in a USB sound card), udev:
-1. Gathers all attributes of the device
-2. Processes all rules in order
-3. Applies matching rules to configure the device
+# RHEL/Fedora/CentOS
+sudo yum install usbutils systemd coreutils alsa-utils
 
-### Rule Types and Matching
+# Arch Linux
+sudo pacman -S usbutils systemd coreutils alsa-utils
+```
 
-The script creates three types of udev rules for maximum compatibility:
+**Check bash version** (must be 4.0+):
+```bash
+bash --version
+```
 
-1. **Vendor/Product ID rule**:
-   ```
-   SUBSYSTEM=="sound", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="YYYY", SYMLINK+="sound/by-id/friendly-name", ATTR{id}="friendly-name"
-   ```
-   - Matches any sound device with specific vendor and product IDs
-   - Uses the ATTRS{} operator which searches up the device chain
-   - Provides a baseline match for the device type
+## Migration from v2.0.0
 
-2. **USB Path rule**:
-   ```
-   SUBSYSTEM=="sound", KERNELS=="usb-X.Y", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="YYYY", SYMLINK+="sound/by-id/friendly-name", ATTR{id}="friendly-name"
-   ```
-   - KERNELS matches against the device path in the kernel
-   - Includes physical USB port information (X.Y represents port numbers)
-   - Can distinguish between identical devices on different USB ports
+Version 2.0.0 used an incompatible port path format. To upgrade:
 
-3. **Platform Path rule**:
-   ```
-   SUBSYSTEM=="sound", ENV{ID_PATH}=="platform-controller-usb-0:X.Y:1.0", ATTRS{idVendor}=="XXXX", ATTRS{idProduct}=="YYYY", SYMLINK+="sound/by-id/friendly-name", ATTR{id}="friendly-name"
-   ```
-   - Uses ENV{ID_PATH} which contains a complete platform-specific path
-   - Provides the most specific matching for the exact hardware path
-   - Works reliably even with complex USB topologies (hubs, etc.)
+```bash
+# Remove old rules
+sudo rm /etc/udev/rules.d/99-usb-soundcards.rules
 
-### Actions and Persistence
+# Regenerate with v3.0.0
+sudo ./usb-audio-mapper.sh
 
-When a rule matches, it performs two key actions:
+# Reboot
+sudo reboot
+```
 
-1. **ATTR{id}="friendly-name"** - Sets the ALSA card ID (appears in `/proc/asound/cards`)
-2. **SYMLINK+="sound/by-id/friendly-name"** - Creates a persistent symlink in `/dev/sound/by-id/`
-
-These settings persist across reboots because:
-- Rules are stored in `/etc/udev/rules.d/` which survives reboots
-- udev processes these rules every time the device is connected
-- The same friendly name is always assigned regardless of detection order
+After rebooting, verify new rules use clean port paths without serial suffixes.
 
 ## Use Cases
 
-### Professional Audio Production
+**Professional Audio**:
+- Live streaming with consistent microphone/mixer identification
+- Recording studios requiring deterministic device routing
+- Podcast production with guest microphones
+- Broadcast automation systems requiring reliable audio paths
 
-- **Recording Studios**: Multiple audio interfaces with consistent routing
-- **Live Performance**: Reliable device naming between shows
-- **Podcasting/Streaming**: Consistent microphone identification
+**Multi-Device Recording**:
+- Stereo capture systems using two microphones as a stereo pair
+- Video production with multiple cameras each having USB audio
 
-### Multi-Device Setups
+**Embedded Systems**:
+- Raspberry Pi audio projects (voice assistants, monitoring systems)
+- Kiosks and digital signage requiring audio after unattended reboots
+- Industrial audio applications and IoT sensors
+- Automotive infotainment systems
 
-- **Multiple Identical Devices**: Distinguish between identical USB microphones
-- **Complex Audio Routing**: Stable device paths for multi-channel setups
-- **Video Conferencing**: Ensure correct microphone selection
+**Education and Research**:
+- Computer labs requiring consistent audio across workstations
+- Audio engineering curriculum with standardized equipment
+- Research laboratories with acoustic measurement equipment
+- Language labs with multiple student workstations
 
-### Automated Systems
+**Home Use**:
+- Home recording studios
+- Gaming and communication setups (Discord, streaming)
+- Home theater PCs with multiple audio zones
+- Amateur radio digital mode interfaces
 
-- **Kiosks & Digital Signage**: Reliable audio after unattended reboots
-- **Embedded Applications**: Industrial systems with specific audio requirements
-- **CI/CD Testing**: Automated testing of audio equipment
+## How It Works
 
-### Educational and Home Use
+### udev Rules System
 
-- **Computer Labs**: Consistent configuration across workstations
-- **HTPC/Media Centers**: Reliable audio device mapping
-- **Raspberry Pi Projects**: Essential for headless audio projects
+Linux uses udev to manage device nodes dynamically. When a USB audio device is connected:
+
+1. Kernel detects device and loads drivers
+2. udev processes rules from `/etc/udev/rules.d/` and `/usr/lib/udev/rules.d/`
+3. Matching rules apply device configuration
+4. ALSA registers the sound card
+
+Without persistence rules, ALSA assigns card numbers based on detection order, which varies between boots.
+
+### Rule Types
+
+The script creates up to three rules per device:
+
+**1. Basic Vendor/Product Rule** (always created):
+```
+SUBSYSTEM=="sound", ATTRS{idVendor}=="2e88", ATTRS{idProduct}=="4610", ATTR{id}="movo-mic", SYMLINK+="sound/by-id/movo-mic"
+```
+Matches any device with these IDs. Cannot distinguish multiple identical devices.
+
+**2. USB Port Rule** (if port detected):
+```
+SUBSYSTEM=="sound", KERNELS=="3-4", ATTRS{idVendor}=="2e88", ATTRS{idProduct}=="4610", ATTR{id}="movo-mic", SYMLINK+="sound/by-id/movo-mic"
+```
+Matches device on specific physical port. Can distinguish identical devices on different ports.
+
+**3. Platform Path Rule** (if platform path detected):
+```
+SUBSYSTEM=="sound", ENV{ID_PATH}=="platform-xhci-hcd.0-usb-0:1.4:1.0", ATTRS{idVendor}=="2e88", ATTRS{idProduct}=="4610", ATTR{id}="movo-mic", SYMLINK+="sound/by-id/movo-mic"
+```
+Most specific matching using complete platform path. Works reliably with complex USB topologies.
+
+### Rule Actions
+
+When a rule matches:
+- `ATTR{id}="friendly-name"` sets the ALSA card ID (appears in `/proc/asound/cards`)
+- `SYMLINK+="sound/by-id/friendly-name"` creates persistent symlink in `/dev/sound/by-id/`
+
+### v3.0.0 vs v2.0.0 Rule Differences
+
+**v2.0.0** (incompatible):
+```
+KERNELS=="usb-3.4-a8f3b2c1"  # Serial suffix breaks v1.0.0 compatibility
+```
+
+**v3.0.0** (fixed):
+```
+KERNELS=="3-4"  # Clean path, v1.0.0 compatible
+```
+
+The v3.0.0 approach maintains compatibility, works reliably across distributions, and prevents false matches.
+
+## Uninstallation
+
+Remove all rules:
+
+```bash
+sudo rm /etc/udev/rules.d/99-usb-soundcards.rules
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=sound
+sudo reboot
+```
+
+To remove rules for a specific device only, edit the file and delete the relevant lines, then reload udev.
+
+## Advanced Usage
+
+### Batch Configuration
+
+Create a script to configure multiple devices:
+
+```bash
+#!/bin/bash
+DEVICES=(
+  "MOVO X1 MINI|2e88|4610|3|movo-left"
+  "MOVO X1 MINI|2e88|4610|4|movo-right"
+  "Blue Yeti|b58e|9e84||blue-yeti"
+)
+
+for device in "${DEVICES[@]}"; do
+  IFS='|' read -r name vendor product port friendly <<< "$device"
+  
+  if [ -n "$port" ]; then
+    sudo ./usb-audio-mapper.sh -n -d "$name" -v "$vendor" -p "$product" -u "$port" -f "$friendly"
+  else
+    sudo ./usb-audio-mapper.sh -n -d "$name" -v "$vendor" -p "$product" -f "$friendly"
+  fi
+done
+```
+
+### Custom Rule Modification
+
+Generate initial rules with the script, then edit `/etc/udev/rules.d/99-usb-soundcards.rules` to add custom attributes:
+
+```
+SUBSYSTEM=="sound", ATTRS{idVendor}=="2e88", ATTRS{idProduct}=="4610", ATTR{id}="my-device", SYMLINK+="sound/by-id/my-device", GROUP="audio", MODE="0660"
+```
+
+Reload rules after editing:
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=sound
+```
 
 ## Changelog
 
-### Version 2.0 (Current)
-- Added comprehensive error checking for all operations
-- Implemented atomic file operations for rule updates
-- Added dependency checking at startup
-- Enhanced input validation and bounds checking
-- Added signal handling for safe interruption
-- Fixed variable quoting throughout
-- Improved shellcheck compliance
-- Better error messages with actionable guidance
+### Version 3.0.0 (October 2025)
 
-### Version 1.0
-- Initial release with core functionality
-- Multi-method USB device detection
-- Interactive and non-interactive modes
-- Three-rule approach for maximum compatibility
+**Breaking Changes**:
+- Complete refactor from LyreBirdAudio project codebase
+- USB port path format changed from suffixed to clean format
+- Requires removal of old rules file when upgrading from v2.0.0
+
+**Critical Fixes**:
+- USB port detection now correctly identifies devices by busnum/devnum matching
+- Port paths use clean format (e.g., `3-4`) for v1.0.0 compatibility
+- Automatic rule deduplication prevents duplicate rules
+- Reboot requires typing "YES" instead of single keypress
+
+**New Features**:
+- `safe_base10()` prevents octal interpretation bugs
+- `get_portable_hash()` with multiple fallbacks (no md5sum dependency)
+- `generate_udev_rules()` centralizes rule generation
+- Readonly constants for all configuration values
+- Expanded signal handling (EXIT INT TERM HUP QUIT)
+
+**Code Quality**:
+- Consistent use of printf instead of echo for POSIX compliance
+- Enhanced error handling with default parameters
+- Advanced terminal color detection with graceful degradation
+- Reduced from 1,431 to 1,175 lines while adding functionality
+
+**Compatibility**:
+- v3.0.0 works with v1.0.0 rules (v2.0.0 did not)
+- v3.0.0 works with v2.0.0 rules after regeneration
+- v3.0.0 works with v3.0.0 rules
+
+### Version 2.0 (2025) - Deprecated
+
+Added error checking, atomic operations, and dependency validation. Broke v1.0.0 compatibility with suffixed port paths. Users should upgrade to v3.0.0.
+
+### Version 1.0 (2025)
+
+Initial release with core functionality, multi-method detection, and interactive/non-interactive modes.
 
 ## License
 
 USB Audio Mapper is licensed under the Apache License 2.0.
 
+Copyright 2025 Tom F and LyreBirdAudio Contributors
+
 ## Contributing
 
-Contributions are welcome! Please ensure any changes:
-- Maintain backward compatibility
-- Include appropriate error handling
-- Follow the existing code style
-- Are tested on multiple Linux distributions
+Contributions are welcome. Please ensure changes:
+
+- Maintain backwards compatibility with v1.0.0 rules
+- Include error handling and validation
 - Pass shellcheck validation
+- Are tested on multiple distributions (Ubuntu, Debian, Fedora, Arch)
+- Include documentation updates
+
+**Submission process**:
+1. Fork the repository
+2. Create a feature branch
+3. Make changes with tests
+4. Ensure shellcheck passes
+5. Submit pull request with detailed description
 
 ## Support
 
-For issues or questions:
-1. Check the troubleshooting section
-2. Run with debug mode (-D) and capture the output
-3. Include your Linux distribution and kernel version
-4. Provide the output of `lsusb` and `cat /proc/asound/cards`
+**Issues**: https://github.com/tomtom215/LyreBirdAudio/issues
+
+When reporting issues, include:
+- Linux distribution and version
+- Kernel version (`uname -r`)
+- Output of `lsusb` and `cat /proc/asound/cards`
+- Script output with debug enabled (`-D`)
+- Contents of `/etc/udev/rules.d/99-usb-soundcards.rules`
+
+## FAQ
+
+**Q: Do I need to run this every time I plug in my device?**  
+A: No. Rules persist and apply automatically.
+
+**Q: Will this break my existing audio setup?**  
+A: No. It only affects devices you explicitly configure.
+
+**Q: What if two devices have the same vendor and product ID?**  
+A: Use port-specific mapping with the `-u` flag.
+
+**Q: Can I edit the generated rules manually?**  
+A: Yes. Edit `/etc/udev/rules.d/99-usb-soundcards.rules` and reload with `udevadm`.
+
+**Q: Why does the script create multiple rules per device?**  
+A: For reliability. Basic matching, port-specific, and platform-specific rules provide fallback options.
+
+**Q: What happens if I move my device to a different USB port?**  
+A: With port-specific rules, the name follows the port. Without port-specific rules, the name follows the device.
+
+**Q: Does this work in a virtual machine?**  
+A: Yes, but USB port detection may be less reliable. Basic vendor/product matching always works.
+
+**Q: I'm upgrading from v2.0.0 - do I have to?**  
+A: Yes. v2.0.0 has compatibility issues and bugs. Remove old rules and regenerate with v3.0.0.
+
+---
+
+**Project**: [LyreBirdAudio](https://github.com/tomtom215/LyreBirdAudio)  
+**Version**: 3.0.0  
+**License**: Apache 2.0
