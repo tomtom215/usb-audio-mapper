@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq shellcheck shfmt
+      - run: make lint
+
+  test:
+    name: test (awk=${{ matrix.awk }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        awk: [gawk, mawk, original-awk, busybox]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bats gawk mawk original-awk busybox udev
+      - run: make test AWK=${{ matrix.awk }}
+
+  bash-matrix:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bats
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/bash
+          key: bash-${{ hashFiles('tests/bash-matrix.sh') }}
+      - run: make bash-matrix
+
+  mutation:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: sudo apt-get update -qq && sudo apt-get install -y -qq bats udev
+      - run: make mutation
+
+  e2e:
+    name: e2e (udev ${{ matrix.udev }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        udev: [host, '241', '247', '262']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install QEMU and guest userland
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 cpio kmod usbutils alsa-utils
+      - name: Allow KVM (falls back to TCG when unavailable)
+        run: |
+          if [ -e /dev/kvm ]; then
+            echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+            sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+          fi
+      - uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: .cache/e2e/dl
+          key: e2e-${{ hashFiles('tests/e2e/fetch-deps.sh') }}
+      - run: make e2e-deps
+      - name: End-to-end (Debian kernel 6.1, udev ${{ matrix.udev }})
+        run: |
+          r=
+          [ "${{ matrix.udev }}" = host ] || r=.cache/e2e/udev-${{ matrix.udev }}
+          E2E_KERNEL_ROOT=.cache/e2e/kernel E2E_UDEV_ROOT=$r tests/e2e/run.sh
