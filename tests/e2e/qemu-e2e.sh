@@ -10,10 +10,17 @@
 #
 # The guest's console output is printed to stdout. Scenario scripts report
 # results as lines "E2E-RESULT: <name> PASS|FAIL <detail>" and the harness exits
-# non-zero if any FAIL line (or no RESULT line at all) is seen.
+# non-zero if any FAIL line is seen, or if the scenario did not finish
+# (no E2E-DONE line).
+#
+# Before the scenario runs, the guest waits until one sound card per
+# usb-audio device in the QEMU arguments exists (E2E_CARD_WAIT seconds, default
+# 180): `udevadm settle` alone returns before slow (TCG) USB enumeration has
+# produced any event.
 #
 # Host requirements: qemu-system-x86_64, a kernel image + modules for it,
-# bash/coreutils/grep/sed, udevadm (systemd >= 245), kmod, lsusb, cpio.
+# bash/coreutils/grep/sed, udevadm (systemd >= 245), kmod, lsusb, cpio,
+# aplay (alsa-utils).
 # Override the kernel with E2E_KERNEL_VERSION (default: newest in /lib/modules).
 # No KVM is required (TCG is used when /dev/kvm is absent).
 
@@ -40,7 +47,7 @@ fi
 kver=${E2E_KERNEL_VERSION:-$(find "$kroot/lib/modules" -mindepth 1 -maxdepth 1 -printf '%f\n' | sort -V | tail -n1)}
 kimg=$kroot/boot/vmlinuz-$kver
 [[ -r "$kimg" ]] || die "kernel image not readable: $kimg"
-for t in qemu-system-x86_64 cpio udevadm kmod lsusb depmod; do
+for t in qemu-system-x86_64 cpio udevadm kmod lsusb depmod aplay; do
     command -v "$t" >/dev/null 2>&1 || die "missing host tool: $t"
 done
 
@@ -71,7 +78,7 @@ for b in bash grep sed tr cut head tail mktemp dirname basename chmod mv cp cat 
     awk flock logger ln uname pkill pgrep sleep ps; do
     copy_bin "$b"
 done
-command -v aplay >/dev/null 2>&1 && copy_bin aplay
+copy_bin aplay
 ln -s bash "$root/usr/bin/sh"
 for b in modprobe insmod depmod lsmod; do ln -s /usr/bin/kmod "$root/usr/sbin/$b"; done
 
@@ -145,7 +152,9 @@ else
     ln -s /usr/bin/udevadm "$root/usr/lib/systemd/systemd-udevd"
 fi
 
-printf 'E2E_MODULES="%s"\nE2E_COLDPLUG="%s"\n' "$modules" "${E2E_COLDPLUG:-0}" >"$root/etc/e2e.conf"
+expect_cards=$(printf '%s\n' "$@" | grep -c '^usb-audio,' || true)
+printf 'E2E_MODULES="%s"\nE2E_COLDPLUG="%s"\nE2E_EXPECT_CARDS=%d\nE2E_CARD_WAIT=%d\n' \
+    "$modules" "${E2E_COLDPLUG:-0}" "$expect_cards" "${E2E_CARD_WAIT:-180}" >"$root/etc/e2e.conf"
 install -D -m 0755 "$mapper" "$root/opt/usb-audio-mapper.sh"
 install -D -m 0755 "$scenario" "$root/opt/scenario.sh"
 # E2E_PRELOAD_RULES: a rules file present before udevd starts, i.e. the state
@@ -169,15 +178,26 @@ start_udevd() {
     for _ in $(seq 1 100); do [ -S /run/udev/control ] && break; sleep 0.1; done
 }
 load_modules() { for m in $E2E_MODULES; do modprobe "$m"; done; }
+# Wait until the kernel has created one sound card per emulated device.
+wait_cards() {
+    local i n=0
+    for ((i = 0; i < E2E_CARD_WAIT * 10; i++)); do
+        n=$(find /sys/class/sound -maxdepth 1 -name 'card[0-9]*' 2>/dev/null | wc -l)
+        [ "$n" -ge "$E2E_EXPECT_CARDS" ] && break
+        sleep 0.1
+    done
+    echo "E2E-INFO: $n of $E2E_EXPECT_CARDS sound card(s) present after $((i / 10)).$((i % 10))s"
+}
 if [ "$E2E_COLDPLUG" = 1 ]; then
     # Real-boot order: devices exist before udevd runs; udev then replays
     # "add" events for everything (systemd-udev-trigger.service).
     load_modules
-    sleep 2
+    wait_cards
     start_udevd
 else
     start_udevd
     load_modules
+    wait_cards
 fi
 udevadm trigger --action=add --type=subsystems
 udevadm trigger --action=add --type=devices
@@ -185,6 +205,9 @@ udevadm settle --timeout=60
 echo "E2E-BOOTED udev=$(udevadm --version)"
 bash /opt/scenario.sh 2>&1
 echo "E2E-DONE"
+# Let the (slow, emulated) serial console drain before powering off.
+sync
+sleep 2
 echo o >/proc/sysrq-trigger 2>/dev/null
 sync
 exec /usr/bin/bash -c 'echo 1 > /proc/sys/kernel/sysrq; echo o > /proc/sysrq-trigger; sleep 5'
@@ -210,4 +233,8 @@ grep -q 'E2E-RESULT:' "$log" || {
     exit 1
 }
 if grep -q 'E2E-RESULT: .* FAIL' "$log"; then exit 1; fi
+grep -q 'E2E-DONE' "$log" || {
+    echo "qemu-e2e: scenario did not finish (no E2E-DONE)" >&2
+    exit 1
+}
 exit 0

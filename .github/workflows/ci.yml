@@ -62,7 +62,7 @@ jobs:
       - name: Install QEMU and guest userland
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 cpio kmod usbutils
+          sudo apt-get install -y -qq --no-install-recommends qemu-system-x86 cpio kmod usbutils alsa-utils
       - name: Allow KVM (falls back to TCG when unavailable)
         run: |
           if [ -e /dev/kvm ]; then

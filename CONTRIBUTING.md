@@ -23,12 +23,12 @@ Develop and test on Linux (a VM or container is fine). The test helpers use
 GNU coreutils and bash ≥ 4.2; on macOS the system bash 3.2 and BSD tools will
 not run the suite, and the script itself only runs on Linux. You need bash,
 bats, shellcheck and shfmt. For the end-to-end tests also qemu-system-x86,
-cpio, kmod, usbutils and a udev install on the host.
+cpio, kmod, usbutils, alsa-utils and a udev install on the host.
 
 ```bash
 # Debian/Ubuntu
 sudo apt-get install bats shellcheck shfmt
-sudo apt-get install qemu-system-x86 cpio kmod usbutils   # for make e2e
+sudo apt-get install qemu-system-x86 cpio kmod usbutils alsa-utils   # for make e2e
 ```
 
 | Command | What it does | Root? |
