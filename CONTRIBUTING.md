@@ -1,184 +1,81 @@
-# Contributing to udev-audio-mapper
+# Contributing to USB Audio Mapper
 
-First off, thank you for considering contributing to udev-audio-mapper! It's people like you that make this tool better for everyone in the Linux audio community.
+Thank you for helping. This project is licensed under the Apache License 2.0;
+by contributing you agree your contribution is licensed the same way. Please be
+respectful and constructive.
 
-## Table of Contents
+## Reporting bugs
 
-- [Code of Conduct](#code-of-conduct)
-- [How Can I Contribute?](#how-can-i-contribute)
-  - [Reporting Bugs](#reporting-bugs)
-  - [Suggesting Enhancements](#suggesting-enhancements)
-  - [Device Compatibility Reports](#device-compatibility-reports)
-  - [Code Contributions](#code-contributions)
-- [Style Guidelines](#style-guidelines)
-  - [Git Commit Messages](#git-commit-messages)
-  - [Bash Style Guidelines](#bash-style-guidelines)
-  - [Documentation Guidelines](#documentation-guidelines)
-- [Pull Request Process](#pull-request-process)
-- [Development Setup](#development-setup)
-- [Community](#community)
+Open an issue at https://github.com/tomtom215/usb-audio-mapper/issues with:
 
-## Code of Conduct
+- what you ran and what you expected;
+- the output of `./usb-audio-mapper.sh --list -D` and of the failing command;
+- `cat /proc/asound/cards`, `cat /etc/udev/rules.d/99-usb-soundcards.rules`;
+- `udevadm --version`, `bash --version | head -n1`, `uname -r`, distribution.
 
-This project adheres to a Code of Conduct that expects all participants to be respectful, considerate, and constructive. By participating, you are expected to uphold this code. This project is licensed under the Apache License 2.0, and by contributing, you agree that your contributions will be licensed under the same license.
+Device compatibility reports (worked / did not work, with the same details and
+the device's make and model) are very welcome, especially from physical
+hardware and ARM boards, which CI cannot cover.
 
-## How Can I Contribute?
+## Development setup
 
-### Reporting Bugs
+Develop and test on Linux (a VM or container is fine). The test helpers use
+GNU coreutils and bash ≥ 4.2; on macOS the system bash 3.2 and BSD tools will
+not run the suite, and the script itself only runs on Linux. You need bash,
+bats, shellcheck and shfmt. For the end-to-end tests also qemu-system-x86,
+cpio, kmod, usbutils and a udev install on the host.
 
-This section guides you through submitting a bug report. Following these guidelines helps maintainers and the community understand your report, reproduce the behavior, and find related reports.
-
-**Before Submitting A Bug Report:**
-- Check the [Issues](https://github.com/username/udev-audio-mapper/issues) to see if the problem has already been reported.
-- If you're unable to find an open issue addressing the problem, open a new one.
-
-**How to Submit A Good Bug Report:**
-- **Use a clear and descriptive title** for the issue to identify the problem.
-- **Describe the exact steps which reproduce the problem** in as many details as possible.
-- **Provide specific examples** to demonstrate the steps.
-- **Describe the behavior you observed after following the steps** and point out exactly what the problem is with that behavior.
-- **Explain which behavior you expected to see instead and why.**
-- **Include details about your Linux distribution** including the version.
-- **Include logs and output** from relevant commands:
-  ```bash
-  cat /proc/asound/cards
-  lsusb
-  cat /etc/udev/rules.d/99-usb-soundcards.rules
-  ```
-
-### Suggesting Enhancements
-
-This section guides you through submitting an enhancement suggestion, including completely new features and minor improvements to existing functionality.
-
-**Before Submitting An Enhancement Suggestion:**
-- Check if the enhancement has already been suggested in the [Issues](https://github.com/username/udev-audio-mapper/issues).
-- If it has, add a comment to the existing issue instead of opening a new one.
-
-**How to Submit A Good Enhancement Suggestion:**
-- **Use a clear and descriptive title** for the issue.
-- **Provide a step-by-step description of the suggested enhancement** in as many details as possible.
-- **Provide specific examples to demonstrate the steps** or point to similar features in other projects.
-- **Describe the current behavior** and **explain which behavior you expected to see instead** and why.
-- **Explain why this enhancement would be useful** to most udev-audio-mapper users.
-
-### Device Compatibility Reports
-
-One of the most valuable contributions is reporting which USB audio devices work with the tool.
-
-**How to Submit A Device Compatibility Report:**
-- Use the "Device Compatibility" issue template.
-- Include:
-  - Manufacturer and model of the device
-  - Linux distribution and kernel version
-  - Whether it worked with simple rules, advanced rules, or both
-  - Any special steps required
-
-### Code Contributions
-
-If you're interested in contributing code:
-
-1. Fork the repository.
-2. Create a feature branch (`git checkout -b feature/amazing-feature`).
-3. Make your changes.
-4. Commit your changes (`git commit -m 'Add some amazing feature'`).
-5. Push to the branch (`git push origin feature/amazing-feature`).
-6. Open a Pull Request.
-
-## Style Guidelines
-
-### Git Commit Messages
-
-* Use the present tense ("Add feature", not "Added feature")
-* Use the imperative mood ("Move cursor to...", not "Moves cursor to...")
-* Limit the first line to 72 characters or less
-* Reference issues and pull requests liberally after the first line
-* Consider starting the commit message with an applicable emoji:
-  * `:bug:` for bug fixes
-  * `:sparkles:` for new features
-  * `:books:` for documentation changes
-  * `:broom:` for code refactoring
-  * `:zap:` for performance improvements
-
-### Bash Style Guidelines
-
-* Use 4 spaces for indentation
-* Always use double brackets for conditional tests (`[[ ... ]]`)
-* Use meaningful variable names
-* Comment complex sections of code
-* Use functions for repeated operations
-* Add proper error handling
-* Include usage documentation with examples
-
-Example of good style:
 ```bash
-# Function to validate input parameters
-validate_params() {
-    local param_name="$1"
-    local param_value="$2"
-    
-    if [[ -z "$param_value" ]]; then
-        echo "ERROR: $param_name cannot be empty" >&2
-        return 1
-    fi
-    
-    return 0
-}
+# Debian/Ubuntu
+sudo apt-get install bats shellcheck shfmt
+sudo apt-get install qemu-system-x86 cpio kmod usbutils   # for make e2e
 ```
 
-### Documentation Guidelines
+| Command | What it does | Root? |
+|---|---|---|
+| `make check` | lint (bash -n, shellcheck, shfmt) + bats suite | no |
+| `make fmt` | format with shfmt (`-i 4 -bn -ci`) | no |
+| `make test AWK=mawk` | bats suite with a specific awk | no |
+| `make test-awk` | bats suite under gawk, mawk, BWK awk, BusyBox awk | no |
+| `make bash-matrix` | bats suite under bash 4.2 … 5.3, plus a check that bash 3.2 (macOS) is refused cleanly; all built from pinned tarballs | no |
+| `make mutation` | re-introduces known defects; each must fail the suite | no |
+| `make e2e` | QEMU with the host kernel and udev | only to read `/boot/vmlinuz-*` where it is root-only (e.g. Ubuntu) |
+| `make e2e-matrix` | QEMU with a pinned Debian kernel and udev 241/247/262 + host, including the USB bus-renumbering reboot | no |
 
-* Use Markdown for all documentation
-* Keep a clear, consistent structure
-* Include examples for complex features
-* Use code blocks for commands and scripts
-* Keep paragraphs focused on a single topic
-* Update documentation when changing functionality
+The bats suite runs the real script against a fake sysfs tree
+(`tests/test_helper.bash`) with stub `udevadm` and `logger` on `PATH`
+(`tests/helpers/bin/`), so it never touches your system. The end-to-end suite
+(`tests/e2e/`) boots a throwaway VM; see the header of `tests/e2e/qemu-e2e.sh`.
 
-## Pull Request Process
+## Rules for changes
 
-1. Ensure your code follows the style guidelines.
-2. Update the README.md and documentation with details of changes if applicable.
-3. The PR should work across major Linux distributions.
-4. Add a clear description of the problem and solution.
-5. Include any relevant issue numbers in the PR description.
+- **Behavior changes need a test that fails without them.** Run the suite on
+  the unfixed code first and see it fail.
+- **Anything that changes the generated rules needs `make e2e`.** Text that
+  looks right can still be ignored or misread by udev; only the kernel and
+  udevd can confirm a rule works.
+- Keep `make check` clean: shellcheck at its default severity, shfmt with
+  `-i 4 -bn -ci`. Re-run the tests after `make fmt` — shfmt rewrites
+  unquoted associative-array keys such as `[1-1]` as arithmetic, so quote them.
+- In bats tests, end negated assertions with `|| false`
+  (`! grep -q x file || false`): bash does not fail on a negated command in the
+  middle of a test. Call script functions through `fn` (a child shell), never
+  by sourcing the script into the test shell, which would switch off bats'
+  error handling.
+- No process substitution (`<(...)`) in the script: it needs `/dev/fd`, which
+  minimal systems lack. A test enforces this.
+- Bash 4.0 compatibility: guard expansions of possibly empty arrays
+  (`${arr[@]+"${arr[@]}"}`) and check `make bash-matrix` for anything
+  version-sensitive.
+- Update README.md, DOCUMENTATION.md and CHANGELOG.md in the same change.
 
-## Development Setup
+## Commit messages
 
-To set up a development environment:
+Imperative mood, first line at most 72 characters ("Fix port parsing for
+hub ports"), body explaining why. Reference issues where relevant.
 
-1. Clone your fork of the repository
-   ```bash
-   git clone https://github.com/your-username/udev-audio-mapper.git
-   ```
+## Pull requests
 
-2. Set up the upstream remote
-   ```bash
-   git remote add upstream https://github.com/username/udev-audio-mapper.git
-   ```
-
-3. Ensure you have a test environment:
-   - A Linux system (VM is fine)
-   - One or more USB audio devices
-   - Root access for testing udev rules
-
-4. Testing script changes:
-   ```bash
-   # Run the script manually
-   sudo ./usb-soundcard-mapper.sh
-   
-   # Check created rules
-   cat /etc/udev/rules.d/99-usb-soundcards.rules
-   
-   # Test rule application
-   sudo udevadm control --reload-rules
-   ```
-
-## Community
-
-Join our community:
-- [Issue tracker](https://github.com/username/udev-audio-mapper/issues) for bugs and features
-- [Discussions](https://github.com/username/udev-audio-mapper/discussions) for questions and community support
-
----
-
-Thank you for contributing to udev-audio-mapper!
+CI (`.github/workflows/ci.yml`) runs lint, the bats suite under four awks,
+the bash version matrix, the mutation check and the end-to-end matrix. All
+must pass. When you fix a defect, consider adding it to `tests/mutation.sh`.
