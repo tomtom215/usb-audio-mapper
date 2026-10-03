@@ -111,7 +111,7 @@ that case.
 | Input | Port used |
 |---|---|
 | `--card N` | Port of the USB device that card N belongs to (sysfs). |
-| `-u PORT` | `PORT`, normalized: `1-2` as is, `usb-1-2` → `1-2`, `usb-0000:00:14.0-2` (from `/proc/asound/cards`) → `<bus>-2` by finding the root hub on that controller. Anything else is rejected with exit 2; there is no silent fallback. |
+| `-u PORT` | `PORT`, normalized: `1-2` as is, `usb-1-2` → `1-2`, `usb-0000:00:14.0-2` or `usb-xhci-hcd.0.auto-1.2` (from `/proc/asound/cards`; the controller is a PCI address or a platform device name) → `<bus>-2` / `<bus>-1.2` by finding the root hub on that controller. Anything else is rejected with exit 2; there is no silent fallback. |
 | `-v/-p` only | The port of the single connected device with that id; exit 5 if there are several; a VID:PID-only rule (with a warning) if there are none. |
 | `--any-port` | No port: VID:PID only. |
 
@@ -164,7 +164,7 @@ the device appears. `--no-apply` skips this step entirely.
 
 | Check | Scope |
 |---|---|
-| bats suite (55 tests) | Rule text, validation, port parsing, sysfs discovery, all CLI paths, migration, locking, atomicity, interactive mode. Runs the real script against a fake sysfs; udevadm and logger are stubbed. |
+| bats suite (56 tests) | Rule text, validation, port parsing, sysfs discovery, all CLI paths, migration, locking, atomicity, interactive mode. Runs the real script against a fake sysfs; udevadm and logger are stubbed. |
 | Mutation check (`make mutation`) | 14 re-introduced defects, each of which must make the suite fail: the comment-line defect, no `!=` guard, a loose port pattern, 32-character names, `card*` names, no migration, no lock, no line assertions, unsanitized descriptions, ignored verification failures, silent port fallback, ignored ambiguity, never using `ID_PATH`, and taking `ID_PATH` from a different device on the port. |
 | Portability | Unit suite under bash 4.2.53, 4.3.30, 4.4.18, 5.0, 5.1.16, 5.2.37, 5.3; bash 3.2.57 (macOS) refused with exit 4, also when sourced; non-Linux systems refused; under gawk, mawk, BWK awk and BusyBox awk; and with the whole userland replaced by BusyBox. |
 | End to end: setup | QEMU guests with Linux 6.1 (Debian 12) and 6.8 (Ubuntu 24.04), real `snd-usb-audio`, real systemd-udevd 241, 245, 247, 255 and 262; three identical devices on two root ports and behind a hub. Checks: immediate rename without reboot, the symlink target, migration of older rules, preservation of unrelated rules, refusal of ambiguous ids, conflict reporting, removal, the interactive wizard, and absence of udev errors about the rules. |

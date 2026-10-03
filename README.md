@@ -127,7 +127,8 @@ unique, so with two such devices only the first one detected gets the name.
 `--list` (sound cards) and `-t` (every USB device) show ports in the kernel's
 form: `<bus>-<port>`, with `.<port>` added for each hub, e.g. `1-2` or
 `1-3.1`. `-u` also accepts the form printed in `/proc/asound/cards`, such as
-`usb-0000:00:14.0-2`, while the device is connected.
+`usb-0000:00:14.0-2` or, on ARM boards, `usb-xhci-hcd.0.auto-1.2`, while the
+device is connected.
 
 ### Other commands
 

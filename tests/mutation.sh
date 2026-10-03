@@ -24,6 +24,7 @@ mutants=(
     'verify-failure-ignored|s/return "\$E_VERIFY"/return 0/'
     'silent-port-fallback|s/port=\$(normalize_usb_port "\$port") || error_exit "Invalid USB port (see --list for valid ports)." "\$E_USAGE"/port=$(normalize_usb_port "$port" 2>\/dev\/null) || port=""/'
     'ambiguity-ignored|s/^            elif ((\${#ports\[@\]} > 1)); then/            elif false; then/'
+    'controller-without-dash|s/(\[0-9A-Za-z:._-\]+)-(\[0-9\]+/([0-9A-Za-z:._]+)-([0-9]+/'
     'id-path-never-used|s/^    elif \[\[ -n "\$target" \]\] \&\& idpath=\$(card_id_path "\$target"); then/    elif false; then/'
     'id-path-borrowed-from-other-device|s/^    if \[\[ -n "\$tport" \&\& .*/    if [[ -n "$tport" ]]; then/'
 )

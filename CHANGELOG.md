@@ -64,7 +64,9 @@ are replaced automatically.
   another card holds the name, which one. No reboot is needed.
 - `--list`, `--remove NAME`, `--dry-run`, `--no-apply`, `--any-port`,
   `--rules-file`, `--version`.
-- `-u` accepts the `usb-0000:00:14.0-2` form printed in `/proc/asound/cards`.
+- `-u` accepts the form printed in `/proc/asound/cards`, for PCI controllers
+  (`usb-0000:00:14.0-2`) and platform controllers whose name contains `-`
+  (`usb-xhci-hcd.0.auto-1.2`, as on dwc3 ARM boards).
 - Migration of rules written by 1.0.0, 2.0.0, 3.0.0 and LyreBirdAudio for the
   same name; `--list` reports any remaining older rules.
 - Refusal (exit 5) when several identical devices are connected and no port
